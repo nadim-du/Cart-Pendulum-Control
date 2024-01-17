@@ -1,0 +1,112 @@
+function Cart_pendulum_control
+    % Define system parameters
+    M = 3; % Cart mass
+    m = 1; % Pendulum mass
+    l = 1; % Pendulum length
+    g = 9.81; % Gravity
+
+    % Define target position
+    T = [1; 0.5];
+
+    % Define final time
+    tf = 2;
+
+    % Define initial guess for coefficients
+    initial_guess = zeros(6, 1);
+
+    % Define linear inequality constraints A*c <= b
+    A = [];
+    b = [];
+
+    % Define nonlinear equality constraints
+    nonlcon = [];
+
+    % Set up optimization options
+    options = optimoptions('fmincon', 'Display', 'iter', 'Algorithm', 'sqp');
+
+    % Objective function
+    objective = @(c) norm(computePendulumTipPosition(c, tf, M, m, l, g) - T);
+
+    % Perform optimization
+    coefficients = fmincon(objective, initial_guess, A, b, [], [], [], [], nonlcon, options);
+
+    % Simulate system with optimized coefficients
+    [t, x, u, phi] = simulateSystem(coefficients, tf, M, m, l, g);
+
+    % Plot results
+    plotResults(t, x, u, phi, tf, T);
+end
+
+function [t, x, u, phi] = simulateSystem(coefficients, tf, M, m, l, g)
+    % Simulation time
+    t = linspace(0, tf, 1000);
+
+    % Control input as a polynomial
+    u = @(t) polyval(coefficients, t);
+
+    % Solve system dynamics
+    [~, X] = ode45(@(t, X) cartPendulumDynamics(t, X, u(t), M, m, l, g), t, [0; 0; 0; 0]);
+
+    % Extract results
+    x = X(:, 1);
+    phi = X(:, 3);
+end
+
+function plotResults(t, x, u, phi, tf, T)
+    % Plot input
+    figure;
+    subplot(3, 1, 1);
+    plot(t, u(t));
+    xlabel('time (s)');
+    ylabel('Input');
+    title('Input');
+
+    % Plot states
+    subplot(3, 1, 2);
+    plot(t, x, t, phi);
+    legend({'Position', 'Pendulum Angle'});  % Updated legend call
+    xlabel('time (s)');
+    ylabel('States');
+    title('States');
+
+    % Plot pendulum path
+    subplot(3, 1, 3);
+    plot(x, -cos(phi));
+    hold on;
+    plot(T(1), T(2), 'ro'); % Target point
+    hold off;
+    xlabel('Cart Position');
+    ylabel('Pendulum Position');
+    title('Pendulum Path');
+
+    sgtitle(['Controlled System Response (tf = ' num2str(tf) 's)']);
+end
+
+
+
+
+function Xdot = cartPendulumDynamics(t, X, u, M, m, l, g)
+    % Extract states
+    x = X(1);
+    x_dot = X(2);
+    phi = X(3);
+    phi_dot = X(4);
+
+    % System parameters
+    I = (m * l^2); % Moment of inertia
+
+    % Equations of motion
+    x_ddot = (-m * l * phi_dot^2 * sin(phi) + u) / (M + m);
+    phi_ddot = (-g * sin(phi) - x_ddot * cos(phi)) / l;
+
+    % State derivatives
+    Xdot = [x_dot; x_ddot; phi_dot; phi_ddot];
+end
+
+function pendulum_tip = computePendulumTipPosition(coefficients, tf, M, m, l, g)
+    % Simulate system with given coefficients
+    [t, x, ~, phi] = simulateSystem(coefficients, tf, M, m, l, g);
+
+    % Compute tip position
+    pendulum_tip = [x(end) - l*sin(phi(end)); -cos(phi(end))];
+end
